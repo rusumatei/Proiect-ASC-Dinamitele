@@ -1,31 +1,38 @@
 DATA SEGMENT
-    ; --- STUDENT 1 VARIABLES (Input & Parsing) ---
     msg_intro        db 13,10,'>>> PROIECT ASM: Operatii pe Siruri de Octeti <<<',13,10,'$'
     msg_req_input    db 13,10,'Introduceti 8-16 octeti in format HEX (ex: 6C 7B ..): $'
+
     msg_error_len    db 13,10,'EROARE: Numar incorect de octeti! (Min 8, Max 16).',13,10,'$'
     msg_error_hex    db 13,10,'EROARE: Input HEX invalid! Folositi doar 0-9, A-F si EXACT 2 cifre / octet.',13,10,'$'
+
+    msg_word_c       db 13,10,'1. Cuvantul C calculat (Hex): $'
+    msg_word_c_bin   db 13,10,'   Cuvantul C calculat (Bin): $'
+    msg_sorted       db 13,10,'2. Sirul sortat (Descrescator): $'
+    msg_max_bits     db 13,10,'3. Pozitia octetului cu cei mai multi biti de 1 (>3): $'
+    msg_no_max       db 13,10,'3. Nu exista niciun octet cu mai mult de 3 biti de 1.',13,10,'$'
+    msg_rotated      db 13,10,'4. Sirul dupa rotiri (Hex si Bin):',13,10,'$'
+
     msg_wait         db 13,10,13,10,'>>> APASATI ORICE TASTA PENTRU A CONTINUA... $'
     newline          db 13,10,'$'
-    
+    space            db ' $'
+    arrow            db ' -> $'
+
     buffer_struct    db 60
     buffer_len       db ?
     buffer_data      db 60 dup(?)
 
     byte_array       db 20 dup(0)
     array_count      db 0
+    word_c           dw 0
+
+    temp_byte        db 0
+    max_bits_val     db 0
+    max_bits_idx     db 0
+
     hex_error_flag   db 0
 
     stack_area       db 256 dup(0)
     stack_top        label byte
-
-    ; --- STUDENT 2 VARIABLES (Calculations & Rotations) ---
-    word_c           dw 0
-    temp_byte        db 0
-    
-    msg_word_c       db 13,10,'1. Cuvantul C calculat (Hex): $'
-    msg_word_c_bin   db 13,10,'   Cuvantul C calculat (Bin): $'
-    msg_rotated      db 13,10,'4. Sirul dupa rotiri (Hex si Bin):',13,10,'$'
-    arrow            db ' -> $' 
 DATA ENDS
 
 CODE SEGMENT
@@ -40,7 +47,6 @@ START:
     lea dx, msg_intro
     call PRINT_STRING
 
-; --- STUDENT 1 LOGIC: READ INPUT ---
 READ_LOOP:
     lea dx, msg_req_input
     call PRINT_STRING
@@ -69,11 +75,8 @@ LEN_OK:
     lea dx, newline
     call PRINT_STRING
 
-    ; --- STUDENT 2 LOGIC: CALCULATE C & ROTATIONS ---
-    ; Step 1: Calculate Word C
     call CALCULATE_C
 
-    ; Display C in Hex
     lea dx, msg_word_c
     call PRINT_STRING
     mov ax, word_c
@@ -83,7 +86,6 @@ LEN_OK:
     mov bh, al
     call PRINT_HEX_BYTE
 
-    ; Display C in Binary
     lea dx, msg_word_c_bin
     call PRINT_STRING
     mov ax, word_c
@@ -95,7 +97,34 @@ LEN_OK:
 
     call WAIT_FOR_USER
 
-    ; Step 2: Apply Rotations
+    call SORT_DESCENDING
+
+    lea dx, msg_sorted
+    call PRINT_STRING
+    call PRINT_ARRAY
+
+    call WAIT_FOR_USER
+
+    call FIND_MAX_BITS_POS
+
+    cmp max_bits_val, 3
+    jle NO_MAX_FOUND
+
+    lea dx, msg_max_bits
+    call PRINT_STRING
+    mov al, max_bits_idx
+    add al, 1
+    mov bh, al
+    call PRINT_HEX_BYTE
+    jmp AFTER_MAX
+
+NO_MAX_FOUND:
+    lea dx, msg_no_max
+    call PRINT_STRING
+
+AFTER_MAX:
+    call WAIT_FOR_USER
+
     lea dx, msg_rotated
     call PRINT_STRING
     call APPLY_ROTATIONS
@@ -105,7 +134,6 @@ LEN_OK:
     mov ax, 4C00h
     int 21h
 
-; --- STUDENT 1 PROCEDURES ---
 INPUT_ERROR_LEN:
     lea dx, msg_error_len
     call PRINT_STRING
@@ -127,15 +155,19 @@ PRINT_STRING ENDP
 WAIT_FOR_USER PROC NEAR
     push ax
     push dx
+
     lea dx, msg_wait
     mov ah, 09h
     int 21h
+
     mov ah, 0Ch
     mov al, 07h
     int 21h
+
     lea dx, newline
     mov ah, 09h
     int 21h
+
     pop dx
     pop ax
     ret
@@ -245,7 +277,6 @@ NOT_HEX:
     ret
 HEX_CHAR_TO_BIN_STRICT ENDP
 
-; --- STUDENT 2 PROCEDURES ---
 CALCULATE_C PROC NEAR
     xor ax, ax
     xor cx, cx
@@ -294,6 +325,64 @@ OR_LOOP:
     mov byte ptr [word_c], al
     ret
 CALCULATE_C ENDP
+
+SORT_DESCENDING PROC NEAR
+    mov cl, array_count
+    dec cl
+OUTER:
+    push cx
+    lea si, byte_array
+    mov ch, array_count
+    dec ch
+INNER:
+    mov al, [si]
+    mov ah, [si+1]
+    cmp al, ah
+    jae NO_SWAP
+    mov [si], ah
+    mov [si+1], al
+NO_SWAP:
+    inc si
+    dec ch
+    cmp ch, 0
+    jg INNER
+    pop cx
+    loop OUTER
+    ret
+SORT_DESCENDING ENDP
+
+FIND_MAX_BITS_POS PROC NEAR
+    lea si, byte_array
+    mov cl, array_count
+    xor di, di
+    mov max_bits_val, 0
+    mov max_bits_idx, 0
+
+SCAN_LOOP:
+    mov al, [si]
+    push cx
+    mov cx, 8
+    xor bl, bl
+    mov dl, al
+COUNT_BITS:
+    shl dl, 1
+    adc bl, 0
+    loop COUNT_BITS
+    pop cx
+
+    cmp bl, max_bits_val
+    jle NEXT_VAL
+    mov max_bits_val, bl
+    mov ax, di
+    mov max_bits_idx, al
+
+NEXT_VAL:
+    inc si
+    inc di
+    dec cl
+    jnz SCAN_LOOP
+    ret
+FIND_MAX_BITS_POS ENDP
 
 APPLY_ROTATIONS PROC NEAR
     lea si, byte_array
@@ -345,7 +434,20 @@ ROT_DONE:
     ret
 ROTATE_BYTE_LEFT ENDP
 
-; --- HELPER PROCEDURES (Required for Display) ---
+PRINT_ARRAY PROC NEAR
+    lea si, byte_array
+    mov cl, array_count
+    xor ch, ch
+PR_LOOP:
+    mov bh, [si]
+    call PRINT_HEX_BYTE
+    lea dx, space
+    call PRINT_STRING
+    inc si
+    loop PR_LOOP
+    ret
+PRINT_ARRAY ENDP
+
 PRINT_HEX_BYTE PROC NEAR
     push ax
     push bx
